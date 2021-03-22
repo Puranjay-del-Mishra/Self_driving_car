@@ -1,0 +1,72 @@
+import pandas as pd
+import numpy as np
+from keras.models import Model
+import cv2
+import keras
+from keras.callbacks import LearningRateScheduler
+from sklearn.model_selection import train_test_split
+from random import shuffle,seed
+from keras.layers import Conv2D,MaxPool2D,BatchNormalization,Dense,Dropout,Input
+from keras.optimizers import Adam
+from keras.preprocessing.image import ImageDataGenerator
+seed(42)
+df=pd.read_csv('driving_log.csv')
+input_2=df.to_numpy()
+shuffle(input_2)
+input_data=[]
+output_data=[]
+for pic1,pic2,pic3 in zip(input_2[:,0],input_2[:,1],input_2[:,2]):
+    img_array_1 = cv2.imread(pic1)
+    img_array_2 = cv2.imread(pic2)
+    img_array_3 = cv2.imread(pic3)
+    temp = np.concatenate((img_array_2, img_array_1, img_array_3), axis=1)
+    input_data.append(temp)
+dim1, dim2, dim3 = len(input_data[0]), len(input_data[0][0]), len(input_data[0][0][0])
+input_data = np.array(input_data).reshape(-1, dim1, dim2, dim3)
+for steer_angle, throttle, reverse, speed in zip(input_2[:,3], input_2[:,4], input_2[:,5], input_2[:,6]):
+    temp = [steer_angle, throttle, reverse, speed]
+    output_data.append(temp)
+output_data=np.array(output_data)
+def puran_model(input_shape):
+    x_in = Input(input_shape)
+    x = Conv2D(8, kernel_size=(3, 3), strides=(2, 2), padding='valid')(x_in)
+    x = MaxPool2D(strides=(2, 2),pool_size=(2, 2))(x)
+    x = BatchNormalization()(x)
+    x_res = x
+    x = Conv2D(8, kernel_size=(3, 3), strides=(1, 1), padding='same')(x)
+    x = BatchNormalization()(x)
+    x = Conv2D(8, kernel_size=(3, 3), strides=(1, 1), padding='same')(x)
+    x = BatchNormalization()(x)
+    x = keras.layers.add([x, x_res])
+    x = Conv2D(8, kernel_size=(3, 3), strides=(2, 2), padding='same')(x)
+    x = MaxPool2D(strides=(2, 2),pool_size=(2, 2))(x)
+    x = BatchNormalization()(x)
+    x = Conv2D(16, kernel_size=(3, 3), strides=(2, 2), padding='same')(x)
+    x = BatchNormalization()(x)
+    x = keras.layers.Flatten()(x)
+    x = Dropout(rate=0.25)(x)
+    x = Dense(128, activation='relu')(x)
+    x = BatchNormalization()(x)
+    x = Dropout(rate=0.2)(x)
+    x = Dense(64, activation='relu')(x)
+    x = BatchNormalization()(x)
+    x = Dense(4, activation='tanh')(x)
+    model = Model(inputs=x_in, outputs=x)
+    return model
+def decay_rate(epoch):
+    lr_initial=0.003
+    if epoch>8:
+        return lr_initial*(1.0/(1+0.001*epoch))
+    return lr_initial
+print((len(input_data[0]), len(input_data[0][0]), len(input_data[0][0][0])))
+X_train, X_test, Y_train, Y_test = train_test_split(input_data, output_data, test_size=0.05)
+callback=[LearningRateScheduler(decay_rate,verbose=1)]
+optimizer = Adam(lr=0.003)
+image_gen = ImageDataGenerator(zoom_range=0.15, brightness_range=[0.6, 1.6])
+self_driving_car = puran_model((len(input_data[0]), len(input_data[0][0]), len(input_data[0][0][0])))
+self_driving_car.compile(optimizer=optimizer, loss='mean_squared_error', metrics='accuracy')
+self_driving_car.fit(image_gen.flow(x=X_train, y=Y_train), epochs=10, batch_size=128,callbacks=callback)
+predictions = self_driving_car.evaluate(x=X_test, y=Y_test)
+print("Test set Loss =" + str(predictions[0]))
+print("Test set Accuracy = " + str(predictions[1] * 100))
+self_driving_car.save('C:/Users/Puranjay Mishra/PycharmProjects/Self_Driving_car')
